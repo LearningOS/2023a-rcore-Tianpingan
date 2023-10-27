@@ -14,8 +14,10 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -79,6 +81,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.task_time = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -139,6 +142,9 @@ impl TaskManager {
         if let Some(next) = self.find_next_task() {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
+            if inner.tasks[next].task_time == 0 {
+                inner.tasks[next].task_time = get_time_ms();
+            }
             inner.tasks[next].task_status = TaskStatus::Running;
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
@@ -152,6 +158,21 @@ impl TaskManager {
         } else {
             panic!("All applications completed!");
         }
+    }
+    fn increase_syscall_count(&self, syscall_id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_syscall_times[syscall_id] += 1;
+    }
+    fn get_syscall_count(&self) -> [u32; MAX_SYSCALL_NUM] {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_syscall_times
+    }
+    fn get_task_time(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].task_time
     }
 }
 
@@ -201,4 +222,23 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+// /// get task_time
+// pub fn get_task_time() -> usize {
+//     TASK_MANAGER.get_task_time()
+// }
+
+/// For lab3, Increase the syscall count for task
+pub fn increase_syscall_count(syscall_id: usize) {
+    TASK_MANAGER.increase_syscall_count(syscall_id);
+}
+
+/// get count
+pub fn get_syscall_count() -> [u32; MAX_SYSCALL_NUM] {
+    TASK_MANAGER.get_syscall_count()
+}
+/// get task_time
+pub fn get_task_time() -> usize {
+    TASK_MANAGER.get_task_time()
 }

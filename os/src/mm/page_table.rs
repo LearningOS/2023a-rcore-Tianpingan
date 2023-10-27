@@ -1,5 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
+use crate::config::PAGE_SIZE;
+
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -107,6 +109,7 @@ impl PageTable {
         }
         result
     }
+
     /// Find PageTableEntry by VirtPageNum
     fn find_pte(&self, vpn: VirtPageNum) -> Option<&mut PageTableEntry> {
         let idxs = vpn.indexes();
@@ -147,6 +150,14 @@ impl PageTable {
     pub fn token(&self) -> usize {
         8usize << 60 | self.root_ppn.0
     }
+    /// set the map between virtual page number and physical page number
+    #[allow(unused)]
+    pub fn mmap(&mut self, vpn: VirtPageNum, flags: PTEFlags) -> Option<()> {
+        // 首先看有没有已经映射了的
+        let pte = self.find_pte_create(vpn)?;
+        *pte = PageTableEntry::new(pte.ppn(), flags | PTEFlags::V);
+        Some(())
+    }
 }
 
 /// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
@@ -170,4 +181,46 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// for lab4
+/// start和len都需要pagesize对齐
+/// port是后8位置
+pub fn mmap(token: usize, start: usize, len: usize, port: u8) -> isize {
+    let mut flags = PTEFlags { bits: port << 1 };
+    flags.set(PTEFlags::U, true);
+    
+    let mut page_table = PageTable::from_token(token);
+    let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
+        let start_va = VirtAddr::from(x);
+        let vpn = start_va.floor();
+        page_table.translate(vpn).is_none()
+    });
+    if !res {
+        return -1;
+    }
+    (start .. start + len).step_by(PAGE_SIZE).for_each(|x| {
+        let start_va = VirtAddr::from(x);
+        let vpn = start_va.floor();
+        page_table.mmap(vpn, flags);
+    });
+    0
+}
+/// for lab4
+pub fn unmmap(token: usize, start: usize, len: usize) -> isize {
+    let mut page_table = PageTable::from_token(token);
+    let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
+        let start_va = VirtAddr::from(x);
+        let vpn = start_va.floor();
+        page_table.translate(vpn).is_some()
+    });
+    if !res {
+        return -1;
+    }
+    (start .. start + len).step_by(PAGE_SIZE).for_each(|x| {
+        let start_va = VirtAddr::from(x);
+        let vpn = start_va.floor();
+        page_table.unmap(vpn);
+    });
+    0
 }
