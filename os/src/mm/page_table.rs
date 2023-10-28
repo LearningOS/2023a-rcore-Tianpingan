@@ -165,6 +165,7 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     let page_table = PageTable::from_token(token);
     let mut start = ptr as usize;
     let end = start + len;
+    // trace!("start: {}, end: {}", start, end);
     let mut v = Vec::new();
     while start < end {
         let start_va = VirtAddr::from(start);
@@ -187,15 +188,19 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
 /// start和len都需要pagesize对齐
 /// port是后8位置
 pub fn mmap(token: usize, start: usize, len: usize, port: u8) -> isize {
+    trace!("mmap: start: {}, len: {}, port: {}", start, len, port);
     let mut flags = PTEFlags { bits: port << 1 };
     flags.set(PTEFlags::U, true);
     
     let mut page_table = PageTable::from_token(token);
     let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
+        trace!("x = {}", x);
         let start_va = VirtAddr::from(x);
         let vpn = start_va.floor();
-        page_table.translate(vpn).is_none()
+        trace!("mmap vpn = {}", vpn.0);
+        page_table.translate(vpn).is_none() || !page_table.translate(vpn).unwrap().is_valid()  
     });
+    trace!("mmap: result = {}", res);
     if !res {
         return -1;
     }
@@ -208,12 +213,16 @@ pub fn mmap(token: usize, start: usize, len: usize, port: u8) -> isize {
 }
 /// for lab4
 pub fn unmmap(token: usize, start: usize, len: usize) -> isize {
+    trace!("unmmap: start: {}, len: {}", start, len);
     let mut page_table = PageTable::from_token(token);
     let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
+        trace!("unmmap x = {}", x);
         let start_va = VirtAddr::from(x);
         let vpn = start_va.floor();
-        page_table.translate(vpn).is_some()
+        trace!("unmmap vpn = {}", vpn.0);
+        page_table.translate(vpn).is_some() && page_table.translate(vpn).unwrap().is_valid() 
     });
+    trace!("unmmap: res = {}", res);
     if !res {
         return -1;
     }

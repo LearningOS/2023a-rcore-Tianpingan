@@ -1,6 +1,6 @@
 //! Process management syscalls
 
-use core::{ptr::copy_nonoverlapping, mem::size_of};
+use core::{ mem::{size_of, self}, slice};
 
 use crate::{
     config::{MAX_SYSCALL_NUM, PAGE_SIZE},
@@ -40,24 +40,33 @@ pub fn sys_yield() -> isize {
     suspend_current_and_run_next();
     0
 }
+pub unsafe fn serialize_row<T: Sized>(src: &T) ->&[u8] {
+   slice::from_raw_parts((src as *const T) as *const u8, mem::size_of::<T>())      
+}
 
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
-    // trace!("kernel: sys_get_time");
-    // let _buffer = translated_byte_buffer(current_user_token(), ts as *const u8, tz);
-    
-    // -1
+pub fn sys_get_time(ts: *mut TimeVal, tz: usize) -> isize {
+    trace!("kernel: sys_get_time------, tz = {}", tz);
     let us = get_time_us();
-    let tv = TimeVal {
+    let tv: TimeVal = TimeVal {
         sec: us / 1_000_000,
         usec: us % 1_000_000,
     };
+    let tv = unsafe { self::serialize_row(&tv) };
     let buffers = translated_byte_buffer(current_user_token(), ts as *const u8, size_of::<TimeVal>());
+    trace!("size: {:?}", buffers.len());
     for buffer in buffers {
-        unsafe { copy_nonoverlapping(&tv as *const TimeVal, buffer[0] as *mut TimeVal, buffer.len()) };
+        trace!("buffer: {:?}", buffer.len());
+        // let src = &ts[0..109];
+        // tv.as
+        buffer.copy_from_slice(tv);
+        // unsafe { copy_nonoverlapping(&tv as *const TimeVal, buffer[0] as *mut TimeVal, buffer.len()) };
+        // trace!("after: buffer: {:?}", buffer);
     }
+    
+    trace!("kernel-end: sys_get_time------");
     0
 }
 
@@ -65,7 +74,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
-    // trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
+    trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
     
     // -1
     let syscall_times = get_syscall_count();
@@ -75,16 +84,23 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
         syscall_times: syscall_times,
         time: time,
     };
+    let task_info = unsafe { self::serialize_row(&task_info) };
     let buffers = translated_byte_buffer(current_user_token(), ti as *const u8, size_of::<TaskInfo>());
+    trace!("task-info, buffer_size: {}", buffers.len());
     for buffer in buffers {
-        unsafe { copy_nonoverlapping(&task_info as *const TaskInfo, buffer[0] as *mut TaskInfo, buffer.len()) };
+        trace!("task-info, buffer: {:?}", buffer.len());
+        buffer.copy_from_slice(task_info);
+        
+        // trace!("after-task-info, buffer: {:?}", buffer);
+        // unsafe { copy_nonoverlapping(&task_info as *const TaskInfo, buffer[0] as *mut TaskInfo, buffer.len()) };
     }
+    trace!("kernel-end: sys_task_info NOT IMPLEMENTED YET!");
     0
 }
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
-    // trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    trace!("sys_mmap: start: {}, len: {}, port: {}", start, len, port);
     if start % PAGE_SIZE != 0 {
         return -1;
     }
@@ -95,7 +111,7 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
         return -1;
     }
     // 向上取整
-    let len = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    let len = ((len + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
     if len == 0 {
         return 0;
     }
@@ -104,12 +120,12 @@ pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(start: usize, len: usize) -> isize {
-    // trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+    trace!("sys_mnmmap: start: {}, len: {}", start, len);
     // -1
     if start % PAGE_SIZE != 0 {
         return -1;
     }
-    let len = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+    let len = ((len + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
     if len == 0 {
         return 0;
     }
@@ -126,9 +142,15 @@ pub fn sys_sbrk(size: i32) -> isize {
 }
 
 pub fn my_get_time() -> usize {
-    let mut time = TimeVal { sec: 0, usec: 0 };
-    match sys_get_time(&mut time as *mut TimeVal, 0) {
-        0 => ((time.sec & 0xffff) * 1000 + time.usec / 1000) as usize,
-        _ => 0,
-    }
+    // let mut time = TimeVal { sec: 0, usec: 0 };
+    // match sys_get_time(&mut time as *mut TimeVal, 0) {
+    //     0 => ((time.sec & 0xffff) * 1000 + time.usec / 1000) as usize,
+    //     _ => 0,
+    // }
+    let us = get_time_us();
+    let time: TimeVal = TimeVal {
+        sec: us / 1_000_000,
+        usec: us % 1_000_000,
+    };
+    ((time.sec & 0xffff) * 1000 + time.usec / 1000) as usize
 }
