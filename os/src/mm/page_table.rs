@@ -1,7 +1,5 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use crate::config::PAGE_SIZE;
-
 use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -131,6 +129,13 @@ impl PageTable {
     /// set the map between virtual page number and physical page number
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
+        // trace!(
+        //     "mmap-inner-inner: vpn: {}, ppn: {}, flags: {}",
+        //     vpn.0,
+        //     ppn.0,
+        //     flags.bits
+        // );
+
         let pte = self.find_pte_create(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
         *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
@@ -154,8 +159,10 @@ impl PageTable {
     #[allow(unused)]
     pub fn mmap(&mut self, vpn: VirtPageNum, flags: PTEFlags) -> Option<()> {
         // 首先看有没有已经映射了的
-        let pte = self.find_pte_create(vpn)?;
-        *pte = PageTableEntry::new(pte.ppn(), flags | PTEFlags::V);
+        trace!("mmap-inner: vpn: {}, flags: {}", vpn.0, flags.bits);
+        let frame = frame_alloc()?;
+        self.map(vpn, frame.ppn, flags);
+        self.frames.push(frame);
         Some(())
     }
 }
@@ -184,52 +191,55 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
     v
 }
 
-/// for lab4
-/// start和len都需要pagesize对齐
-/// port是后8位置
-pub fn mmap(token: usize, start: usize, len: usize, port: u8) -> isize {
-    trace!("mmap: start: {}, len: {}, port: {}", start, len, port);
-    let mut flags = PTEFlags { bits: port << 1 };
-    flags.set(PTEFlags::U, true);
-    
-    let mut page_table = PageTable::from_token(token);
-    let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
-        trace!("x = {}", x);
-        let start_va = VirtAddr::from(x);
-        let vpn = start_va.floor();
-        trace!("mmap vpn = {}", vpn.0);
-        page_table.translate(vpn).is_none() || !page_table.translate(vpn).unwrap().is_valid()  
-    });
-    trace!("mmap: result = {}", res);
-    if !res {
-        return -1;
-    }
-    (start .. start + len).step_by(PAGE_SIZE).for_each(|x| {
-        let start_va = VirtAddr::from(x);
-        let vpn = start_va.floor();
-        page_table.mmap(vpn, flags);
-    });
-    0
-}
-/// for lab4
-pub fn unmmap(token: usize, start: usize, len: usize) -> isize {
-    trace!("unmmap: start: {}, len: {}", start, len);
-    let mut page_table = PageTable::from_token(token);
-    let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
-        trace!("unmmap x = {}", x);
-        let start_va = VirtAddr::from(x);
-        let vpn = start_va.floor();
-        trace!("unmmap vpn = {}", vpn.0);
-        page_table.translate(vpn).is_some() && page_table.translate(vpn).unwrap().is_valid() 
-    });
-    trace!("unmmap: res = {}", res);
-    if !res {
-        return -1;
-    }
-    (start .. start + len).step_by(PAGE_SIZE).for_each(|x| {
-        let start_va = VirtAddr::from(x);
-        let vpn = start_va.floor();
-        page_table.unmap(vpn);
-    });
-    0
-}
+// /// for lab4
+// /// start和len都需要pagesize对齐
+// /// port是后8位置
+// pub fn mmap(token: usize, start: usize, len: usize, port: u8) -> isize {
+//     trace!("mmap[{}]: start: {}, len: {}, port: {}", token, start, len, port);
+//     let mut flags = PTEFlags { bits: port << 1 };
+//     flags.set(PTEFlags::U, true);
+//     // trace!("bits: {}", flags.bits());
+//     let mut page_table = PageTable::from_token(token);
+
+//     let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
+//         trace!("x = {}", x);
+//         let start_va = VirtAddr::from(x);
+//         let vpn = start_va.floor();
+//         trace!("mmap vpn = {}", vpn.0);
+//         page_table.translate(vpn).is_none() || !page_table.translate(vpn).unwrap().is_valid()
+//     });
+//     if !res {
+//         return -1;
+//     }
+//     (start .. start + len).step_by(PAGE_SIZE).for_each(|x| {
+//         trace!("xx = {}", x);
+//         let start_va = VirtAddr::from(x);
+//         let vpn = start_va.floor();
+//         if page_table.mmap(vpn, flags).is_none() {
+//             trace!("fuck you");
+//         }
+//     });
+//     0
+// }
+// /// for lab4
+// pub fn unmmap(token: usize, start: usize, len: usize) -> isize {
+//     trace!("unmmap[{}]: start: {}, len: {}", token, start, len);
+//     let mut page_table = PageTable::from_token(token);
+//     let res = (start .. start + len).step_by(PAGE_SIZE).all(|x| {
+//         trace!("unmmap x = {}", x);
+//         let start_va = VirtAddr::from(x);
+//         let vpn = start_va.floor();
+//         trace!("unmmap vpn = {}", vpn.0);
+//         page_table.translate(vpn).is_some() && page_table.translate(vpn).unwrap().is_valid()
+//     });
+//     trace!("unmmap: res = {}", res);
+//     if !res {
+//         return -1;
+//     }
+//     (start .. start + len).step_by(PAGE_SIZE).for_each(|x| {
+//         let start_va = VirtAddr::from(x);
+//         let vpn = start_va.floor();
+//         page_table.unmap(vpn);
+//     });
+//     0
+// }
