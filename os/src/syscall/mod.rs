@@ -45,9 +45,11 @@ mod process;
 
 use fs::*;
 use process::*;
+use crate::task::*;
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
-    match syscall_id {
+    syscall_times_add(syscall_id);
+    let ret_code = match syscall_id {
         SYSCALL_READ => sys_read(args[0], args[1] as *const u8, args[2]),
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
@@ -64,5 +66,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_SPAWN => sys_spawn(args[0] as *const u8),
         SYSCALL_SET_PRIORITY => sys_set_priority(args[0] as isize),
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
-    }
+    };
+    running_time_modify(); // 此处产生了和前三章不同的修改, 用以解决t1, t2, t3的冲突问题.
+    ret_code
 }

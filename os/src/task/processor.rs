@@ -7,8 +7,11 @@
 use super::__switch;
 use super::{fetch_task, TaskStatus};
 use super::{TaskContext, TaskControlBlock};
+use crate::config::MAX_SYSCALL_NUM;
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use crate::timer::get_time;
+use crate::mm::{VirtPageNum, PTEFlags, PhysPageNum};
 use alloc::sync::Arc;
 use lazy_static::*;
 
@@ -61,6 +64,9 @@ pub fn run_tasks() {
             let mut task_inner = task.inner_exclusive_access();
             let next_task_cx_ptr = &task_inner.task_cx as *const TaskContext;
             task_inner.task_status = TaskStatus::Running;
+            if task_inner.time_first_run == 0 {
+                task_inner.time_first_run = get_time() as usize;
+            }
             // release coming task_inner manually
             drop(task_inner);
             // release coming task TCB manually
@@ -84,6 +90,45 @@ pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
 /// Get a copy of the current task
 pub fn current_task() -> Option<Arc<TaskControlBlock>> {
     PROCESSOR.exclusive_access().current()
+}
+
+
+pub fn syscall_times_add(sid: usize) {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .syscall_times_add(sid);
+}
+
+
+pub fn syscall_times_query() -> [u32; MAX_SYSCALL_NUM] {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .syscall_times_query()
+}
+
+pub fn running_time_modify() {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .running_time_modify()
+}
+
+
+pub fn running_time_query() -> usize {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .running_time_query()
+}
+
+
+pub fn map_inner(_vpn: VirtPageNum, _ppn: PhysPageNum, _flags: PTEFlags) {
+    current_task()
+        .unwrap()
+        .inner_exclusive_access()
+        .map_inner(_vpn, _ppn, _flags)
 }
 
 /// Get the current user token(addr of page table)

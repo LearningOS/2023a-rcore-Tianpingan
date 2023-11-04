@@ -2,13 +2,15 @@
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 use crate::config::TRAP_CONTEXT_BASE;
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::config::MAX_SYSCALL_NUM;
+use crate::mm::{MemorySet, PhysPageNum, VirtPageNum, PTEFlags, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
+use crate::timer::get_time;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::cell::RefMut;
-
+use crate::task::PageTable;
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -50,6 +52,15 @@ pub struct TaskControlBlockInner {
     /// Maintain the execution status of the current process
     pub task_status: TaskStatus,
 
+    ///
+    pub time_last_call: usize,
+
+    ///
+    pub time_first_run: usize,
+    
+    ///
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+
     /// Application address space
     pub memory_set: MemorySet,
 
@@ -68,6 +79,8 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    pub prio: isize
 }
 
 impl TaskControlBlockInner {
@@ -84,6 +97,28 @@ impl TaskControlBlockInner {
     }
     pub fn is_zombie(&self) -> bool {
         self.get_status() == TaskStatus::Zombie
+    }
+    pub fn syscall_times_add(&mut self, sid: usize) {
+        /* if sid == 64 {
+            println!("DEBUG: syscall write!")
+        } */
+        self.syscall_times[sid] += 1;
+    }
+
+    pub fn syscall_times_query(&self) -> [u32; MAX_SYSCALL_NUM] {
+        self.syscall_times
+    }
+
+    pub fn running_time_modify(&mut self) {
+        self.time_last_call = get_time() as usize;
+    }
+
+    pub fn running_time_query(&self) -> usize {
+        (self.time_last_call - self.time_first_run) / 11000
+    }
+
+    pub fn map_inner(&mut self, _vpn: VirtPageNum, _ppn: PhysPageNum, _flags: PTEFlags) {
+        PageTable::map(&mut (self.memory_set.page_table), _vpn, _ppn, PTEFlags::U | _flags);
     }
 }
 
@@ -108,7 +143,11 @@ impl TaskControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
+                    time_last_call: 0,
+                    time_first_run: 0,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
                     trap_cx_ppn,
+                    prio: 0,
                     base_size: user_sp,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
@@ -181,7 +220,11 @@ impl TaskControlBlock {
             kernel_stack,
             inner: unsafe {
                 UPSafeCell::new(TaskControlBlockInner {
+                    time_last_call: 0,
+                    time_first_run: 0,
+                    syscall_times: [0; MAX_SYSCALL_NUM],
                     trap_cx_ppn,
+                    prio: 0,
                     base_size: parent_inner.base_size,
                     task_cx: TaskContext::goto_trap_return(kernel_stack_top),
                     task_status: TaskStatus::Ready,
