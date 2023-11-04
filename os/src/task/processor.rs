@@ -92,7 +92,7 @@ pub fn current_task() -> Option<Arc<TaskControlBlock>> {
     PROCESSOR.exclusive_access().current()
 }
 
-
+/// 
 pub fn syscall_times_add(sid: usize) {
     current_task()
         .unwrap()
@@ -100,14 +100,14 @@ pub fn syscall_times_add(sid: usize) {
         .syscall_times_add(sid);
 }
 
-
+/// 
 pub fn syscall_times_query() -> [u32; MAX_SYSCALL_NUM] {
     current_task()
         .unwrap()
         .inner_exclusive_access()
         .syscall_times_query()
 }
-
+/// 
 pub fn running_time_modify() {
     current_task()
         .unwrap()
@@ -115,7 +115,7 @@ pub fn running_time_modify() {
         .running_time_modify()
 }
 
-
+/// 
 pub fn running_time_query() -> usize {
     current_task()
         .unwrap()
@@ -123,7 +123,7 @@ pub fn running_time_query() -> usize {
         .running_time_query()
 }
 
-
+/// 
 pub fn map_inner(_vpn: VirtPageNum, _ppn: PhysPageNum, _flags: PTEFlags) {
     current_task()
         .unwrap()
